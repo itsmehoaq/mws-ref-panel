@@ -46,6 +46,18 @@ Do not run `bun run build` for normal local work. Build is for deploy verificati
 | `bun run lint` | ESLint |
 | `bun run format` | Prettier write |
 
+## Cloudflare Pages Deploy
+
+Use these project settings in Cloudflare Pages:
+
+| Setting | Value |
+| --- | --- |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Root directory | repository root |
+
+Cloudflare's React/Vite preset uses `npm run build` and `dist`. The build toolchain packages (`typescript`, `vite`, Vite plugin, and type packages) are listed in `dependencies` so the Pages build still works if the deploy environment installs production dependencies only.
+
 ## Environment
 
 Required in `.env.local`:
