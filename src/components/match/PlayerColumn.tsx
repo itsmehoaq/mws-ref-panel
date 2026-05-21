@@ -1,6 +1,5 @@
 import { Button } from "@/components/ui/button"
 import { INGREDIENTS } from "@/data/constants"
-import { MATCH } from "@/data/mock"
 import type { Inventory } from "@/types"
 
 function WinBoxes({ score, needed }: { score: number; needed: number }) {
@@ -31,6 +30,11 @@ function IngredientBar({ inv }: { inv: Inventory }) {
 }
 
 interface Props {
+  playerA: string
+  playerB: string
+  scoreA: number
+  scoreB: number
+  bestOf: number
   invA: Inventory
   invB: Inventory
   round: string
@@ -38,7 +42,8 @@ interface Props {
   streamer?: string
 }
 
-export function PlayerColumn({ invA, invB, round, refName, streamer }: Props) {
+export function PlayerColumn({ playerA, playerB, scoreA, scoreB, bestOf, invA, invB, round, refName, streamer }: Props) {
+  const winsNeeded = Math.ceil(bestOf / 2)
   return (
     <aside className="flex w-52 flex-shrink-0 flex-col border-r border-border">
       {/* Scrollable content */}
@@ -46,10 +51,10 @@ export function PlayerColumn({ invA, invB, round, refName, streamer }: Props) {
         {/* Player A */}
         <div className="space-y-2 border-b border-border p-4">
           <div className="flex items-baseline justify-between">
-            <span className="font-heading text-sm font-semibold">{MATCH.playerA}</span>
-            <span className="font-heading text-3xl leading-none">{MATCH.scoreA}</span>
+            <span className="font-heading text-sm font-semibold">{playerA}</span>
+            <span className="font-heading text-3xl leading-none">{scoreA}</span>
           </div>
-          <WinBoxes score={MATCH.scoreA} needed={MATCH.winsNeeded} />
+          <WinBoxes score={scoreA} needed={winsNeeded} />
           <IngredientBar inv={invA} />
         </div>
 
@@ -60,16 +65,16 @@ export function PlayerColumn({ invA, invB, round, refName, streamer }: Props) {
         {/* Player B */}
         <div className="space-y-2 border-b border-border p-4">
           <div className="flex items-baseline justify-between">
-            <span className="font-heading text-sm font-semibold">{MATCH.playerB}</span>
-            <span className="font-heading text-3xl leading-none">{MATCH.scoreB}</span>
+            <span className="font-heading text-sm font-semibold">{playerB}</span>
+            <span className="font-heading text-3xl leading-none">{scoreB}</span>
           </div>
-          <WinBoxes score={MATCH.scoreB} needed={MATCH.winsNeeded} />
+          <WinBoxes score={scoreB} needed={winsNeeded} />
           <IngredientBar inv={invB} />
         </div>
 
         {/* Match meta */}
         <div className="space-y-1.5 p-4 text-xs text-muted-foreground">
-          <p><span className="font-medium text-foreground">Format</span> Bo{MATCH.bestOf}</p>
+          <p><span className="font-medium text-foreground">Format</span> Bo{bestOf}</p>
           <p><span className="font-medium text-foreground">Round</span> {round}</p>
           <p><span className="font-medium text-foreground">Ref</span> {refName}</p>
           {streamer && <p><span className="font-medium text-foreground">Streamer</span> {streamer}</p>}

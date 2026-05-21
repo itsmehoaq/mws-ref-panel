@@ -13,12 +13,14 @@ function statusBadge(map: PoolMap): React.ReactNode {
 }
 
 interface Props {
+  mappool?: PoolMap[]
   onRowClick?: (map: PoolMap) => void
 }
 
-export function MappoolTable({ onRowClick }: Props) {
-  const played = MAPPOOL.filter((m) => m.status === "completed").length
-  const banned = MAPPOOL.filter((m) => m.status === "banned").length
+export function MappoolTable({ mappool: liveMaps, onRowClick }: Props) {
+  const maps = liveMaps ?? MAPPOOL
+  const played = maps.filter((m) => m.status === "completed").length
+  const banned = maps.filter((m) => m.status === "banned").length
 
   return (
     <main className="flex h-full flex-col overflow-hidden">
@@ -42,7 +44,7 @@ export function MappoolTable({ onRowClick }: Props) {
             </tr>
           </thead>
           <tbody>
-            {MAPPOOL.map((map) => (
+            {maps.map((map) => (
               <tr
                 key={map.slot}
                 style={rowStyle(map)}

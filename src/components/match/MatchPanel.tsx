@@ -1,10 +1,9 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { MOCK_USER } from "@/data/constants"
-import { AUDIT_LOG, INVENTORY_A, INVENTORY_B, MATCH } from "@/data/mock"
-import type { Match, PoolMap } from "@/types"
+import { AUDIT_LOG, INVENTORY_A, INVENTORY_B } from "@/data/mock"
+import type { Inventory, Match, PoolMap } from "@/types"
 import { IrcChat } from "./IrcChat"
 import { MapActionModal } from "./MapActionModal"
 import { MappoolTable } from "./MappoolTable"
@@ -19,7 +18,32 @@ interface Props {
 export function MatchPanel({ match, onBack }: Props) {
   const [poolWidth, setPoolWidth] = useState(770)
   const [selectedMap, setSelectedMap] = useState<PoolMap | null>(null)
+  const [liveMappool, setLiveMappool] = useState<PoolMap[] | null>(null)
+  const [liveInventory, setLiveInventory] = useState<{ a: Inventory; b: Inventory } | null>(null)
+  const [liveScoreA, setLiveScoreA] = useState<number>(match.scoreA ?? 0)
+  const [liveScoreB, setLiveScoreB] = useState<number>(match.scoreB ?? 0)
   const dragState = useRef<{ startX: number; startW: number } | null>(null)
+
+  useEffect(() => {
+    async function load() {
+      const params = new URLSearchParams({ mappool: match.mappool ?? "", playerA: match.playerA, playerB: match.playerB })
+      const [mpRes, invRes] = await Promise.all([
+        fetch(`/api/match/${match.id}/mappool?${params}`, { credentials: "include" }),
+        fetch(`/api/match/${match.id}/inventory?${params}`, { credentials: "include" }),
+      ])
+      if (mpRes.ok) {
+        const data = await mpRes.json() as { mappool: PoolMap[]; scoreA: number; scoreB: number }
+        setLiveMappool(data.mappool)
+        setLiveScoreA(data.scoreA)
+        setLiveScoreB(data.scoreB)
+      }
+      if (invRes.ok) {
+        const data = await invRes.json() as { a: Inventory; b: Inventory }
+        setLiveInventory(data)
+      }
+    }
+    void load()
+  }, [match.id])
 
   function onDragStart(e: React.MouseEvent) {
     e.preventDefault()
@@ -59,21 +83,26 @@ export function MatchPanel({ match, onBack }: Props) {
         </span>
         <Badge className="self-center border-0 bg-secondary text-secondary-foreground text-xs">{match.round}</Badge>
         <Badge variant="default" className="self-center text-xs">Live</Badge>
-        <span className="ml-auto self-center font-mono text-xs text-muted-foreground">{MATCH.lobbyUrl}</span>
+        <span className="ml-auto self-center font-mono text-xs text-muted-foreground">{match.lobbyUrl}</span>
       </header>
 
       {/* 3-column body */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <PlayerColumn
-          invA={INVENTORY_A}
-          invB={INVENTORY_B}
+          playerA={match.playerA}
+          playerB={match.playerB}
+          scoreA={liveScoreA}
+          scoreB={liveScoreB}
+          bestOf={match.bestOf ?? 9}
+          invA={liveInventory?.a ?? INVENTORY_A}
+          invB={liveInventory?.b ?? INVENTORY_B}
           round={match.round}
-          refName={MOCK_USER.name}
+          refName={match.referee ?? "—"}
           streamer={match.streamer}
         />
 
         <div style={{ width: poolWidth, flexShrink: 0 }} className="flex flex-col overflow-hidden">
-          <MappoolTable onRowClick={setSelectedMap} />
+          <MappoolTable mappool={liveMappool ?? undefined} onRowClick={setSelectedMap} />
         </div>
 
         {/* Resize handle */}
@@ -95,10 +124,10 @@ export function MatchPanel({ match, onBack }: Props) {
 
             <TabsContent value="recipes" className="flex-1 overflow-y-auto p-4">
               <RecipePanel
-                invA={INVENTORY_A}
-                invB={INVENTORY_B}
-                labelA={MATCH.playerA}
-                labelB={MATCH.playerB}
+                invA={liveInventory?.a ?? INVENTORY_A}
+                invB={liveInventory?.b ?? INVENTORY_B}
+                labelA={match.playerA}
+                labelB={match.playerB}
               />
             </TabsContent>
 
