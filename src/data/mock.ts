@@ -1,13 +1,13 @@
 import type { Inventory, IrcEntry, Match, PoolMap } from "@/types"
 
 export const scheduleMatches: Match[] = [
-  { id: "m1", round: "Round of 16",   playerA: "Strawberry_Jam",  playerB: "Blueberries_osu",  date: "May 23, 2026", time: "10:00 UTC", status: "live"      },
-  { id: "m2", round: "Round of 16",   playerA: "CroissantFC",     playerB: "MochiMeltdown",    date: "May 23, 2026", time: "11:30 UTC", status: "upcoming"  },
-  { id: "m3", round: "Round of 16",   playerA: "GlazedDonuts",    playerB: "BaguetteBoys",     date: "May 23, 2026", time: "13:00 UTC", status: "upcoming"  },
-  { id: "m4", round: "Round of 16",   playerA: "SourdoughSquad",  playerB: "PretzelPals",      date: "May 23, 2026", time: "14:30 UTC", status: "upcoming"  },
-  { id: "m5", round: "Round of 16",   playerA: "EclairElites",    playerB: "TartTroopers",     date: "May 23, 2026", time: "16:00 UTC", status: "scheduled" },
-  { id: "m6", round: "Quarterfinals", playerA: "TBD",             playerB: "TBD",              date: "May 24, 2026", time: "10:00 UTC", status: "scheduled" },
-  { id: "m7", round: "Quarterfinals", playerA: "TBD",             playerB: "TBD",              date: "May 24, 2026", time: "12:00 UTC", status: "scheduled" },
+  { id: "m1", round: "Round of 16",   mappool: "RO16", playerA: "Strawberry_Jam",  playerB: "Blueberries_osu",  date: "May 23, 2026", time: "10:00 UTC", status: "live",      streamer: "StreamerA" },
+  { id: "m2", round: "Round of 16",   mappool: "RO16", playerA: "CroissantFC",     playerB: "MochiMeltdown",    date: "May 23, 2026", time: "11:30 UTC", status: "upcoming",  streamer: "StreamerB" },
+  { id: "m3", round: "Round of 16",   mappool: "RO16", playerA: "GlazedDonuts",    playerB: "BaguetteBoys",     date: "May 23, 2026", time: "13:00 UTC", status: "upcoming"  },
+  { id: "m4", round: "Round of 16",   mappool: "RO16", playerA: "SourdoughSquad",  playerB: "PretzelPals",      date: "May 23, 2026", time: "14:30 UTC", status: "upcoming"  },
+  { id: "m5", round: "Round of 16",   mappool: "RO16", playerA: "EclairElites",    playerB: "TartTroopers",     date: "May 23, 2026", time: "16:00 UTC", status: "scheduled" },
+  { id: "m6", round: "Quarterfinals", mappool: "QF",   playerA: "TBD",             playerB: "TBD",              date: "May 24, 2026", time: "10:00 UTC", status: "scheduled" },
+  { id: "m7", round: "Quarterfinals", mappool: "QF",   playerA: "TBD",             playerB: "TBD",              date: "May 24, 2026", time: "12:00 UTC", status: "scheduled" },
 ]
 
 export const MATCH = {
@@ -18,6 +18,7 @@ export const MATCH = {
   bestOf:     9,
   winsNeeded: 5,
   lobbyUrl:   "mp/123456",
+  streamer:   "StreamerA",
 }
 
 export const INVENTORY_A: Inventory = { egg: 2, sugar: 1, butter: 2, flour: 0, milk: 1 }

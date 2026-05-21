@@ -69,6 +69,7 @@ export function MatchPanel({ match, onBack }: Props) {
           invB={INVENTORY_B}
           round={match.round}
           refName={MOCK_USER.name}
+          streamer={match.streamer}
         />
 
         <div style={{ width: poolWidth, flexShrink: 0 }} className="flex flex-col overflow-hidden">
@@ -83,12 +84,12 @@ export function MatchPanel({ match, onBack }: Props) {
 
         {/* Right: tabbed panel */}
         <aside className="flex min-w-0 flex-1 flex-col overflow-hidden border-l border-border">
-          <Tabs defaultValue="recipes" className="flex min-h-0 flex-1 flex-col gap-0">
+          <Tabs defaultValue="irc" className="flex min-h-0 flex-1 flex-col gap-0">
             <div className="flex-shrink-0 border-b border-border bg-card/40 px-3 py-2">
               <TabsList className="w-full">
+                <TabsTrigger value="irc"     className="flex-1 text-xs">IRC</TabsTrigger>
                 <TabsTrigger value="recipes" className="flex-1 text-xs">Recipes</TabsTrigger>
                 <TabsTrigger value="logs"    className="flex-1 text-xs">Logs</TabsTrigger>
-                <TabsTrigger value="irc"     className="flex-1 text-xs">IRC</TabsTrigger>
               </TabsList>
             </div>
 

@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button"
 import { INGREDIENTS } from "@/data/constants"
 import { MATCH } from "@/data/mock"
 import type { Inventory } from "@/types"
@@ -34,9 +35,10 @@ interface Props {
   invB: Inventory
   round: string
   refName: string
+  streamer?: string
 }
 
-export function PlayerColumn({ invA, invB, round, refName }: Props) {
+export function PlayerColumn({ invA, invB, round, refName, streamer }: Props) {
   return (
     <aside className="flex w-52 flex-shrink-0 flex-col gap-0 overflow-y-auto border-r border-border">
       {/* Player A */}
@@ -68,6 +70,7 @@ export function PlayerColumn({ invA, invB, round, refName }: Props) {
         <p><span className="font-medium text-foreground">Format</span> Bo{MATCH.bestOf}</p>
         <p><span className="font-medium text-foreground">Round</span> {round}</p>
         <p><span className="font-medium text-foreground">Ref</span> {refName}</p>
+        {streamer && <p><span className="font-medium text-foreground">Streamer</span> {streamer}</p>}
       </div>
 
       {/* Pool legend */}
@@ -79,6 +82,14 @@ export function PlayerColumn({ invA, invB, round, refName }: Props) {
             <span className="text-xs text-muted-foreground">{name} = {pool} win</span>
           </div>
         ))}
+      </div>
+      {/* Lobby manage */}
+      <div className="border-t border-border p-4 space-y-1.5">
+        <p className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">Lobby</p>
+        <Button size="sm" variant="outline" className="w-full text-xs">Create lobby</Button>
+        <Button size="sm" variant="outline" className="w-full text-xs">Join existing lobby</Button>
+        <Button size="sm" variant="outline" className="w-full text-xs">Post match result</Button>
+        <Button size="sm" variant="destructive" className="w-full text-xs">Close lobby</Button>
       </div>
     </aside>
   )

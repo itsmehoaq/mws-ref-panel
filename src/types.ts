@@ -28,6 +28,7 @@ export interface Recipe {
 export interface Match {
   id: string
   round: string
+  mappool?: string
   playerA: string
   playerB: string
   date: string
@@ -38,6 +39,7 @@ export interface Match {
   currentMap?: string
   notes?: string
   referee?: string
+  streamer?: string
 }
 
 export interface IrcEntry {
