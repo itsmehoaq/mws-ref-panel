@@ -164,7 +164,7 @@ export function DashboardPage({ currentUserName, onOpenMatch, onLogout }: Props)
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-card/60">
-                  {["Round", "Match", "Date", "Time", "Status", ""].map((h) => (
+                  {["Round", "Mappool", "Match", "Date", "Time", "Status", ""].map((h) => (
                     <th key={h} className="px-4 py-3 text-left font-heading text-xs uppercase tracking-[0.18em] text-muted-foreground">{h}</th>
                   ))}
                 </tr>
@@ -174,6 +174,7 @@ export function DashboardPage({ currentUserName, onOpenMatch, onLogout }: Props)
                   scheduleMatches.map((m, i) => (
                     <tr key={m.id} className={`border-b border-border/60 last:border-0 ${i % 2 === 0 ? "bg-background/40" : ""}`}>
                       <td className="px-4 py-3 text-muted-foreground">{m.round}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{m.mappool ?? "—"}</td>
                       <td className="px-4 py-3 font-medium">{m.playerA} <span className="text-muted-foreground">vs</span> {m.playerB}</td>
                       <td className="px-4 py-3 text-muted-foreground">{m.date}</td>
                       <td className="px-4 py-3 text-muted-foreground">{m.time}</td>
@@ -189,7 +190,7 @@ export function DashboardPage({ currentUserName, onOpenMatch, onLogout }: Props)
                   ))
                 ) : (
                   <tr>
-                    <td className="px-4 py-6 text-center text-muted-foreground" colSpan={6}>
+                    <td className="px-4 py-6 text-center text-muted-foreground" colSpan={7}>
                       {matchesResponse ? "No scheduled matches found." : "Loading tournament schedule..."}
                     </td>
                   </tr>
@@ -198,6 +199,7 @@ export function DashboardPage({ currentUserName, onOpenMatch, onLogout }: Props)
             </table>
           </div>
         </section>
+
       </div>
     </div>
   )
