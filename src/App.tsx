@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom"
+import { Toaster } from "@/components/ui/sonner"
 import { DashboardPage } from "@/components/DashboardPage"
 import { ErrorPage } from "@/components/ErrorPage"
 import { LandingPage } from "@/components/LandingPage"
@@ -22,12 +23,12 @@ function getApiUrl(path: string): string {
   return `${origin}${path}`
 }
 
-function MatchPanelRoute({ onBack }: { onBack: () => void }) {
+function MatchPanelRoute({ onBack, isDemo }: { onBack: () => void; isDemo: boolean }) {
   const { state } = useLocation()
   const match = (state as { match?: Match } | null)?.match
 
   if (!match) return <Navigate to="/dashboard" replace />
-  return <MatchPanel match={match} onBack={onBack} />
+  return <MatchPanel match={match} onBack={onBack} isDemo={isDemo} />
 }
 
 function ErrorRoute() {
@@ -107,6 +108,8 @@ function App() {
   }
 
   return (
+    <>
+    <Toaster position="bottom-right" />
     <Routes>
       <Route path="/" element={
         <LandingPage
@@ -124,10 +127,11 @@ function App() {
           onLogout={() => { void logout() }}
         />
       } />
-      <Route path="/match/:matchId" element={<MatchPanelRoute onBack={() => navigate("/dashboard")} />} />
+      <Route path="/match/:matchId" element={<MatchPanelRoute onBack={() => navigate("/dashboard")} isDemo={sessionUser?.osu_id === 0} />} />
       <Route path="/error/:code" element={<ErrorRoute />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   )
 }
 

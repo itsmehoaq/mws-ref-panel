@@ -11,6 +11,8 @@ type Bindings = {
   OSU_REDIRECT_URI?: string
   SESSION_SECRET?: string
   OSU_PROXY_BASE?: string
+  IRC_RELAY_URL?: string
+  IRC_RELAY_SECRET?: string
 }
 
 type ServiceAccountJson = {
@@ -45,6 +47,8 @@ type ApiMatch = {
   mappool?: string
   playerA: string
   playerB: string
+  playerAOsuId?: string
+  playerBOsuId?: string
   date: string
   time: string
   status: ApiMatchStatus
@@ -350,14 +354,30 @@ function mapPlayersById(playerRecords: SheetRecord[]): Map<string, string> {
   return playersById
 }
 
+function mapOsuIdsByKey(playerRecords: SheetRecord[]): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const r of playerRecords) {
+    const osuId = firstValue(r, ["osu_id"])
+    if (!osuId) continue
+    const pid  = firstValue(r, ["player_id", "id"])
+    const name = firstValue(r, ["name", "username", "osu_username"])
+    if (pid)  map.set(pid, osuId)
+    if (name) map.set(name.toLowerCase(), osuId)
+    map.set(osuId, osuId) // osu_id → osu_id passthrough
+  }
+  return map
+}
+
 function parseOptionalInt(value: string): number | undefined {
   const n = parseInt(value, 10)
   return isNaN(n) ? undefined : n
 }
 
-function mapMatchRecord(record: SheetRecord, playersById: Map<string, string>): ApiMatch {
-  const playerA = firstValue(record, ["player_a", "team_a", "playera", "team_a_id"])
-  const playerB = firstValue(record, ["player_b", "team_b", "playerb", "team_b_id"])
+function mapMatchRecord(record: SheetRecord, playersById: Map<string, string>, osuIdsMap?: Map<string, string>): ApiMatch {
+  const rawA  = firstValue(record, ["player_a", "team_a", "playera", "team_a_id"])
+  const rawB  = firstValue(record, ["player_b", "team_b", "playerb", "team_b_id"])
+  const playerA = getPlayerName(rawA, playersById)
+  const playerB = getPlayerName(rawB, playersById)
   const referee = firstValue(record, ["referee", "ref"])
   const notes = firstValue(record, ["notes"])
   const bestOf = parseOptionalInt(firstValue(record, ["best_of", "bestof", "bo"]))
@@ -366,8 +386,10 @@ function mapMatchRecord(record: SheetRecord, playersById: Map<string, string>): 
     id: firstValue(record, ["match_id", "id"]),
     round: firstValue(record, ["round"]),
     mappool: firstValue(record, ["mappool", "mappool_id", "pool"]) || undefined,
-    playerA: getPlayerName(playerA, playersById),
-    playerB: getPlayerName(playerB, playersById),
+    playerA,
+    playerB,
+    playerAOsuId: osuIdsMap?.get(rawA) ?? osuIdsMap?.get(playerA.toLowerCase()),
+    playerBOsuId: osuIdsMap?.get(rawB) ?? osuIdsMap?.get(playerB.toLowerCase()),
     date: firstValue(record, ["date", "match_date", "scheduled_date", "scheduled_at"]) || "TBD",
     time: firstValue(record, ["time", "match_time", "scheduled_time", "start_time"]) || "TBD",
     status: normalizeMatchStatus(firstValue(record, ["status"])),
@@ -388,10 +410,12 @@ async function getMatches(env: Bindings): Promise<ApiMatch[]> {
     getSheetValues(env, "matches!A1:Z"),
     getSheetValues(env, "players!A1:Z"),
   ])
-  const playersById = mapPlayersById(sheetRowsToRecords(playerValues))
+  const playerRecords = sheetRowsToRecords(playerValues)
+  const playersById = mapPlayersById(playerRecords)
+  const osuIdsMap   = mapOsuIdsByKey(playerRecords)
 
   return sheetRowsToRecords(matchValues)
-    .map((record) => mapMatchRecord(record, playersById))
+    .map((record) => mapMatchRecord(record, playersById, osuIdsMap))
     .filter((match) => match.id)
     .sort(compareMatches)
 }
@@ -632,6 +656,99 @@ function isRestrictAccess(configMap: Map<string, string>): boolean {
   return configMap.get("restrict access")?.toLowerCase() !== "false"
 }
 
+function teamModeToInt(mode: string): number {
+  switch (mode.trim().toLowerCase().replace(/[^a-z]/g, "")) {
+    case "tagcoop": return 1
+    case "teamvs": case "teamversus": return 2
+    case "tagteamvs": return 3
+    default: return 0 // head-to-head
+  }
+}
+
+function scoringModeToInt(mode: string): number {
+  switch (mode.trim().toLowerCase().replace(/[^a-z0-9]/g, "")) {
+    case "accuracy": return 1
+    case "combo": return 2
+    case "scorev2": return 3
+    default: return 0 // score
+  }
+}
+
+function formatToLobbySize(format: string): number {
+  const m = format.trim().match(/(\d+)v(\d+)/i)
+  if (m) return parseInt(m[1], 10) + parseInt(m[2], 10)
+  return 2
+}
+
+async function writeSheetCell(env: Bindings, rangeA1: string, value: string): Promise<void> {
+  const sheetId = mustEnv(env, "GOOGLE_SHEETS_TOURNAMENT_ID")
+  const accessToken = await getGoogleAccessToken(env)
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(rangeA1)}?valueInputOption=RAW`
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ range: rangeA1, majorDimension: "ROWS", values: [[value]] }),
+  })
+  if (!res.ok) {
+    const reason = await res.text()
+    throw new Error(`Sheets write failed: ${res.status} ${reason}`)
+  }
+}
+
+function colLetter(idx: number): string {
+  let result = ""
+  let n = idx + 1
+  while (n > 0) {
+    const rem = (n - 1) % 26
+    result = String.fromCharCode(65 + rem) + result
+    n = Math.floor((n - 1) / 26)
+  }
+  return result
+}
+
+async function appendSheetRow(env: Bindings, sheetName: string, row: string[]): Promise<void> {
+  const sheetId = mustEnv(env, "GOOGLE_SHEETS_TOURNAMENT_ID")
+  const accessToken = await getGoogleAccessToken(env)
+  const range = encodeURIComponent(`${sheetName}!A:Z`)
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ majorDimension: "ROWS", values: [row] }),
+  })
+  if (!res.ok) {
+    const reason = await res.text()
+    throw new Error(`Sheets append failed: ${res.status} ${reason}`)
+  }
+}
+
+async function appendAuditLog(
+  env: Bindings,
+  actor: string,
+  action: string,
+  entityType: string,
+  entityId: string,
+  beforeJson: string,
+  afterJson: string,
+): Promise<void> {
+  const eventId = randomHex(8)
+  const now = new Date().toISOString()
+  await appendSheetRow(env, "audit_log", [eventId, actor, action, entityType, entityId, beforeJson, afterJson, now])
+}
+
+async function updateMatchField(env: Bindings, matchId: string, fieldName: string, value: string): Promise<void> {
+  const values = await getSheetValues(env, "matches!A1:Z")
+  const [headers, ...rows] = values
+  if (!headers) return
+  const colIdx = headers.findIndex((h) => h.trim().toLowerCase().replace(/[\s-]/g, "_") === fieldName)
+  if (colIdx < 0) throw new Error(`Column "${fieldName}" not found in matches sheet`)
+  const rowIdx = rows.findIndex((r) => r[0]?.trim() === matchId)
+  if (rowIdx < 0) throw new Error(`Match "${matchId}" not found in matches sheet`)
+  const colLetter = String.fromCharCode(65 + colIdx)
+  const rowNum = rowIdx + 2
+  await writeSheetCell(env, `matches!${colLetter}${rowNum}`, value)
+}
+
 app.use("/api/*", async (c, next) => {
   const path = new URL(c.req.url).pathname
   if (path === "/api/health" || path.startsWith("/api/public/") || path.startsWith("/api/auth/")) {
@@ -641,6 +758,13 @@ app.use("/api/*", async (c, next) => {
   const sessionUser = await readSessionUser(c)
   if (!sessionUser) {
     return c.json({ error: "Unauthorized" }, 401)
+  }
+
+  // Demo sessions (osuId === 0) cannot perform write actions
+  const WRITE_PREFIXES = ["/api/irc/send", "/api/match/"]
+  const isWriteRoute = c.req.method !== "GET" && WRITE_PREFIXES.some((p) => path.startsWith(p))
+  if (isWriteRoute && sessionUser.osuId === 0) {
+    return c.json({ error: "Demo mode: actions disabled" }, 403)
   }
 
   return next()
@@ -973,9 +1097,23 @@ app.get("/api/public/config", async (c) => {
   try {
     const configMap = await getConfigMap(c.env)
     return c.json({
-      restrictAccess: isRestrictAccess(configMap),
-      tournamentName: configMap.get("tournament name") ?? "",
-      abbreviation:   configMap.get("abbreviation") ?? "",
+      restrictAccess:  isRestrictAccess(configMap),
+      tournamentName:  configMap.get("tournament name") ?? "",
+      abbreviation:    configMap.get("abbreviation") ?? "",
+      scoring:         configMap.get("scoring") ?? "",
+      teamMode:        configMap.get("team mode") ?? "",
+      gameMode:        configMap.get("game mode") ?? "",
+      format:          configMap.get("format") ?? "",
+      enforceNF:       configMap.get("enforce nf?")?.toLowerCase() === "true",
+      banOrder:        configMap.get("ban order") ?? "",
+      protectOrder:    configMap.get("protect order") ?? "",
+      strikeOrder:     configMap.get("strike order") ?? "",
+      qualifiersPool:  configMap.get("qualifiers pool") ?? "",
+      multipliers: {
+        ez:   configMap.get("multiplier ez") ?? "",
+        ezhd: configMap.get("multiplier ezhd") ?? "",
+        ezdt: configMap.get("multiplier ezdt") ?? "",
+      },
       rules: {
         late:       configMap.get("late rules") ?? "",
         roll:       configMap.get("roll rules") ?? "",
@@ -989,6 +1127,449 @@ app.get("/api/public/config", async (c) => {
     })
   } catch {
     return c.json({ restrictAccess: true, tournamentName: "", abbreviation: "", rules: {} })
+  }
+})
+
+app.post("/api/irc/send", async (c) => {
+  const relayUrl = c.env.IRC_RELAY_URL?.trim()
+  const relaySecret = c.env.IRC_RELAY_SECRET?.trim()
+  if (!relayUrl || !relaySecret) {
+    return c.json({ error: "IRC relay not configured" }, 503)
+  }
+
+  let body: { channel?: string; message?: string }
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400)
+  }
+
+  const { channel, message } = body
+  if (!channel || !message) {
+    return c.json({ error: "channel and message required" }, 400)
+  }
+
+  const res = await fetch(`${relayUrl}/send`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Relay-Secret": relaySecret,
+    },
+    body: JSON.stringify({ channel, message }),
+  })
+
+  const data = await res.json()
+  return c.json(data, res.status as 200 | 400 | 401 | 503)
+})
+
+app.get("/api/irc/stream", async (c) => {
+  const relayUrl = c.env.IRC_RELAY_URL?.trim()
+  const relaySecret = c.env.IRC_RELAY_SECRET?.trim()
+  if (!relayUrl || !relaySecret) {
+    return c.json({ error: "IRC relay not configured" }, 503)
+  }
+
+  const channel = c.req.query("channel")
+  const streamUrl = new URL(`${relayUrl}/stream`)
+  if (channel) streamUrl.searchParams.set("channel", channel)
+
+  const relayRes = await fetch(streamUrl.toString(), {
+    headers: {
+      "X-Relay-Secret": relaySecret,
+      Accept: "text/event-stream",
+    },
+  })
+
+  if (!relayRes.ok || !relayRes.body) {
+    return c.json({ error: "Relay stream unavailable" }, 503)
+  }
+
+  return new Response(relayRes.body, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  })
+})
+
+app.post("/api/match/:matchId/create-lobby", async (c) => {
+  const matchId = c.req.param("matchId")
+  const relayUrl = c.env.IRC_RELAY_URL?.trim()
+  const relaySecret = c.env.IRC_RELAY_SECRET?.trim()
+  if (!relayUrl || !relaySecret) {
+    return c.json({ error: "IRC relay not configured" }, 503)
+  }
+
+  let body: { playerA?: string; playerB?: string; refUsername?: string }
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400)
+  }
+
+  const { playerA = "", playerB = "", refUsername = "" } = body
+
+  // Read config for lobby settings
+  const configMap = await getConfigMap(c.env)
+  const abbreviation = configMap.get("abbreviation") ?? "MWS"
+  const teamMode = teamModeToInt(configMap.get("team mode") ?? "")
+  const scoringMode = scoringModeToInt(configMap.get("scoring") ?? "")
+  const lobbySize = formatToLobbySize(configMap.get("format") ?? "1v1")
+  const enforceNF = configMap.get("enforce nf?")?.toLowerCase() === "true"
+  const staffWebhook = configMap.get("staff webhook")?.trim()
+
+  const title = `${abbreviation}: ${playerA} vs ${playerB}`
+
+  // Open SSE stream BEFORE sending !mp make to avoid race with BanchoBot response
+  const streamRes = await fetch(`${relayUrl}/stream`, {
+    headers: { "X-Relay-Secret": relaySecret, Accept: "text/event-stream" },
+  })
+  if (!streamRes.ok || !streamRes.body) {
+    return c.json({ error: "Relay stream unavailable" }, 503)
+  }
+
+  // Send !mp make to BanchoBot (PM)
+  await fetch(`${relayUrl}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Relay-Secret": relaySecret },
+    body: JSON.stringify({ channel: "BanchoBot", message: `!mp make ${title}` }),
+  })
+
+  // Read SSE until BanchoBot confirms lobby created
+  const reader = streamRes.body.getReader()
+  const decoder = new TextDecoder()
+  let lobbyUrl: string | null = null
+  const deadline = Date.now() + 12000
+  let buf = ""
+
+  while (Date.now() < deadline && !lobbyUrl) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    const lines = buf.split("\n")
+    buf = lines.pop() ?? ""
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue
+      try {
+        const ev = JSON.parse(line.slice(6)) as { from?: string; message?: string }
+        if (ev.from === "BanchoBot" && ev.message?.includes("osu.ppy.sh/mp/")) {
+          const m = ev.message.match(/https:\/\/osu\.ppy\.sh\/mp\/(\d+)/)
+          if (m) lobbyUrl = `https://osu.ppy.sh/mp/${m[1]}`
+        }
+      } catch {}
+      if (lobbyUrl) break
+    }
+  }
+  reader.cancel()
+
+  if (!lobbyUrl) {
+    return c.json({ error: "Timed out waiting for BanchoBot" }, 408)
+  }
+
+  const mpId = lobbyUrl.match(/\/mp\/(\d+)/)?.[1] ?? ""
+  const channel = `#mp_${mpId}`
+
+  // Build !mp set and optional follow-up commands
+  const mpSetCmd = `!mp set ${teamMode} ${scoringMode} ${lobbySize}`
+  const followUpCmds: string[] = [mpSetCmd]
+  if (enforceNF) followUpCmds.push("!mp mods NF")
+  if (refUsername) followUpCmds.push(`!mp addref ${refUsername}`)
+
+  // Write lobby URL to Sheets (best-effort)
+  try {
+    await updateMatchField(c.env, matchId, "lobby_url", lobbyUrl)
+  } catch {
+    // non-fatal — ref can see it in UI
+  }
+
+  // Post Discord staff webhook (best-effort)
+  if (staffWebhook) {
+    await fetch(staffWebhook, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [{
+          title: `Lobby Created — Match ${matchId}`,
+          description: `**${title}**\n\n\`\`\`\n${channel}\n\`\`\``,
+          color: 0x5f7f63,
+          fields: [
+            { name: "Channel", value: `\`${channel}\``, inline: true },
+            { name: "MP Link", value: lobbyUrl, inline: false },
+          ],
+        }],
+      }),
+    }).catch(() => {})
+  }
+
+  return c.json({ ok: true, lobbyUrl, channel, mpId, followUpCmds })
+})
+
+app.post("/api/match/:matchId/close-lobby", async (c) => {
+  const matchId = c.req.param("matchId")
+
+  let body: { channel?: string; messages?: { ts: string; from: string; message: string; local?: boolean }[] }
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400)
+  }
+
+  const { channel, messages = [] } = body
+
+  // Send !mp close via relay (best-effort — lobby may already be closed)
+  const relayUrl = c.env.IRC_RELAY_URL?.trim()
+  const relaySecret = c.env.IRC_RELAY_SECRET?.trim()
+  if (relayUrl && relaySecret && channel) {
+    await fetch(`${relayUrl}/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Relay-Secret": relaySecret },
+      body: JSON.stringify({ channel, message: "!mp close" }),
+    }).catch(() => {})
+  }
+
+  // Build chat log text
+  const logLines = messages.map((m) => {
+    const time = new Date(m.ts).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    return `[${time}] ${m.local ? "(sent) " : ""}${m.from}: ${m.message}`
+  })
+  const logText = logLines.length > 0
+    ? logLines.join("\n")
+    : "(no messages recorded)"
+
+  // Post to staff webhook with chat log as file attachment
+  const configMap = await getConfigMap(c.env)
+  const staffWebhook = configMap.get("staff webhook")?.trim()
+  if (staffWebhook) {
+    const filename = `match_${matchId}_chat.txt`
+    const form = new FormData()
+    form.append("payload_json", JSON.stringify({
+      embeds: [{
+        title: `Lobby Closed — Match ${matchId}`,
+        description: channel ? `Channel: \`${channel}\`` : "No channel recorded",
+        color: 0x8d3f38,
+        footer: { text: `${messages.length} messages · ${new Date().toUTCString()}` },
+      }],
+    }))
+    form.append("files[0]", new Blob([logText], { type: "text/plain" }), filename)
+    await fetch(staffWebhook, { method: "POST", body: form }).catch(() => {})
+  }
+
+  return c.json({ ok: true, messageCount: messages.length })
+})
+
+app.post("/api/match/:matchId/remind", async (c) => {
+  const matchId = c.req.param("matchId")
+
+  const [configMap, matchValues, playerValues] = await Promise.all([
+    getConfigMap(c.env),
+    getSheetValuesSafe(c.env, "matches!A1:Z"),
+    getSheetValuesSafe(c.env, "players!A1:Z"),
+  ])
+
+  const reminderWebhook = configMap.get("reminder webhook")?.trim()
+  if (!reminderWebhook) {
+    return c.json({ error: "Reminder webhook not configured in config sheet" }, 503)
+  }
+
+  const matchRecords = sheetRowsToRecords(matchValues)
+  const matchRecord = matchRecords.find((r) => r["match_id"]?.trim() === matchId)
+  if (!matchRecord) {
+    return c.json({ error: "Match not found" }, 404)
+  }
+
+  // Build player lookup: player_id | osu_id | lowercase name → discord ping or name
+  const playerRecords = sheetRowsToRecords(playerValues)
+  const playerPingMap = new Map<string, string>()
+  for (const p of playerRecords) {
+    const pid      = firstValue(p, ["player_id", "id"])
+    const osuId    = firstValue(p, ["osu_id"])
+    const name     = firstValue(p, ["name", "username"])
+    const discordId = firstValue(p, ["discord_id"]).trim()
+    const ping = /^\d{15,20}$/.test(discordId) ? `<@${discordId}>` : name
+    if (pid)  playerPingMap.set(pid, ping)
+    if (osuId) playerPingMap.set(osuId, ping)
+    if (name)  playerPingMap.set(name.toLowerCase(), ping)
+  }
+
+  function resolvePing(raw: string): string {
+    return playerPingMap.get(raw) ?? playerPingMap.get(raw.toLowerCase()) ?? raw
+  }
+
+  const rawA  = firstValue(matchRecord, ["player_a", "playera"])
+  const rawB  = firstValue(matchRecord, ["player_b", "playerb"])
+  const dateStr = firstValue(matchRecord, ["date", "match_date"])
+  const timeStr = firstValue(matchRecord, ["time", "match_time", "start_time"])
+
+  let timeDisplay = "soon"
+  let unixTs: number | null = null
+  if (dateStr && timeStr) {
+    try {
+      const matchTime = new Date(`${dateStr}T${timeStr}`)
+      if (!isNaN(matchTime.getTime())) {
+        unixTs = Math.floor(matchTime.getTime() / 1000)
+        timeDisplay = `<t:${unixTs}:R>`
+      }
+    } catch { /* leave "soon" */ }
+  }
+
+  const pingA = resolvePing(rawA)
+  const pingB = resolvePing(rawB)
+  const content = `${pingA} ${pingB} Your match is starting ${timeDisplay}. Invites will be sent shortly. Good luck, have fun!`
+
+  const res = await fetch(reminderWebhook, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  })
+
+  if (!res.ok) {
+    const reason = await res.text()
+    return c.json({ error: `Webhook failed: ${res.status} ${reason}` }, 502)
+  }
+
+  return c.json({ ok: true, unixTs, content })
+})
+
+app.post("/api/match/:matchId/join-lobby", async (c) => {
+  const matchId = c.req.param("matchId")
+  let body: { mpId?: string }
+  try { body = await c.req.json() } catch { return c.json({ error: "Invalid JSON" }, 400) }
+
+  const mpId = body.mpId?.trim().replace(/^#?mp_?/i, "")
+  if (!mpId || !/^\d+$/.test(mpId)) {
+    return c.json({ error: "Invalid mp ID" }, 400)
+  }
+
+  const channel = `#mp_${mpId}`
+  const lobbyUrl = `https://osu.ppy.sh/mp/${mpId}`
+
+  const relayUrl = c.env.IRC_RELAY_URL?.trim()
+  const relaySecret = c.env.IRC_RELAY_SECRET?.trim()
+
+  let alive = false
+  if (relayUrl && relaySecret) {
+    // Open SSE before sending command to avoid race
+    const streamRes = await fetch(`${relayUrl}/stream?channel=${encodeURIComponent(channel)}`, {
+      headers: { "X-Relay-Secret": relaySecret, Accept: "text/event-stream" },
+    })
+
+    if (streamRes.ok && streamRes.body) {
+      await fetch(`${relayUrl}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Relay-Secret": relaySecret },
+        body: JSON.stringify({ channel, message: "!mp settings" }),
+      })
+
+      const reader = streamRes.body.getReader()
+      const decoder = new TextDecoder()
+      const deadline = Date.now() + 6000
+      let buf = ""
+
+      outer: while (Date.now() < deadline) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split("\n")
+        buf = lines.pop() ?? ""
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue
+          try {
+            const ev = JSON.parse(line.slice(6)) as { from?: string; message?: string }
+            if (ev.from === "BanchoBot") { alive = true; break outer }
+          } catch {}
+        }
+      }
+      reader.cancel()
+    }
+  }
+
+  // Write lobby_url to Sheets regardless (best-effort)
+  try {
+    await updateMatchField(c.env, matchId, "lobby_url", lobbyUrl)
+  } catch {}
+
+  return c.json({ ok: true, alive, lobbyUrl, channel })
+})
+
+app.post("/api/match/:matchId/action", async (c) => {
+  const matchId = c.req.param("matchId")
+  const sessionUser = await readSessionUser(c)
+
+  let body: { action?: string; player?: string; slot?: string }
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400)
+  }
+
+  const { action, player, slot } = body
+  if (!action || !player || !slot) {
+    return c.json({ error: "action, player, and slot required" }, 400)
+  }
+  if (!["pick", "ban", "protect"].includes(action)) {
+    return c.json({ error: "Invalid action" }, 400)
+  }
+
+  const status = action === "pick" ? "picked" : action === "ban" ? "banned" : "protected"
+
+  try {
+    const matchMapsValues = await getSheetValues(c.env, "match_maps!A1:Z")
+    const [headers, ...rows] = matchMapsValues
+    if (!headers) return c.json({ error: "match_maps sheet empty" }, 500)
+
+    const norm = headers.map(normalizeHeader)
+    const idx = (name: string) => norm.indexOf(name)
+    const matchIdIdx  = idx("match_id")
+    const slotIdx     = idx("slot")
+    const mapIdIdx    = idx("map_id")
+    const pickedByIdx = idx("picked_by")
+    const bannedByIdx = idx("banned_by")
+    const statusIdx   = idx("status")
+
+    const existingRowIdx = rows.findIndex(
+      (r) => r[matchIdIdx]?.trim() === matchId && r[slotIdx]?.trim() === slot
+    )
+
+    const beforeJson = existingRowIdx >= 0 ? JSON.stringify(rows[existingRowIdx]) : "{}"
+
+    if (existingRowIdx >= 0) {
+      const sheetRow = existingRowIdx + 2
+      const writes: Promise<void>[] = []
+      if (action === "pick" && pickedByIdx >= 0) {
+        writes.push(writeSheetCell(c.env, `match_maps!${colLetter(pickedByIdx)}${sheetRow}`, player))
+      } else if (action === "ban" && bannedByIdx >= 0) {
+        writes.push(writeSheetCell(c.env, `match_maps!${colLetter(bannedByIdx)}${sheetRow}`, player))
+      }
+      if (statusIdx >= 0) {
+        writes.push(writeSheetCell(c.env, `match_maps!${colLetter(statusIdx)}${sheetRow}`, status))
+      }
+      await Promise.all(writes)
+    } else {
+      const newRow = new Array(Math.max(norm.length, 9)).fill("")
+      if (matchIdIdx >= 0) newRow[matchIdIdx] = matchId
+      if (slotIdx >= 0)    newRow[slotIdx] = slot
+      if (mapIdIdx >= 0)   newRow[mapIdIdx] = slot
+      if (statusIdx >= 0)  newRow[statusIdx] = status
+      if (action === "pick" && pickedByIdx >= 0)  newRow[pickedByIdx] = player
+      if (action === "ban" && bannedByIdx >= 0)    newRow[bannedByIdx] = player
+      await appendSheetRow(c.env, "match_maps", newRow)
+    }
+
+    const afterState = { matchId, slot, action, player, status }
+    await appendAuditLog(
+      c.env,
+      sessionUser?.username ?? "unknown",
+      action,
+      "match_map",
+      `${matchId}:${slot}`,
+      beforeJson,
+      JSON.stringify(afterState),
+    ).catch(() => {})
+
+    return c.json({ ok: true, slot, action, player, status })
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Action failed" }, 500)
   }
 })
 

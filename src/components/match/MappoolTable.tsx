@@ -7,7 +7,8 @@ function statusBadge(map: PoolMap): React.ReactNode {
   if (map.status === "banned")      return <span className="text-xs text-muted-foreground line-through">Banned · {map.bannedBy}</span>
   if (map.status === "in-progress") return <span className="text-xs font-semibold text-primary">In Progress</span>
   if (map.status === "completed")   return <span className="text-xs text-muted-foreground">Won by {map.winner}</span>
-  if (map.status === "picked")      return <span className="text-xs text-muted-foreground">Picked · {map.pickedBy}</span>
+  if (map.status === "picked")    return <span className="text-xs text-muted-foreground">Picked · {map.pickedBy}</span>
+  if (map.status === "protected") return <span className="text-xs text-[#6f8ea5]">Protected</span>
   return null
 }
 

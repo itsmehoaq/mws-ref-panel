@@ -60,7 +60,7 @@ function IngredientBar({ inv, editing, onChange, onToggleEdit }: { inv: Inventor
   )
 }
 
-type LobbyConfirm = "create" | "close" | "result"
+type LobbyConfirm = "create" | "close" | "result" | "reminder"
 
 interface Props {
   playerA: string
@@ -80,12 +80,16 @@ interface Props {
   onJoinLobby?: (mpId: string) => void
   onCloseLobby?: () => void
   onPostResult?: () => void
+  onSendReminder?: () => void
+  hasLobby?: boolean
+  isDemo?: boolean
 }
 
 const LOBBY_CONFIRM_CONFIG: Record<LobbyConfirm, { title: string; description: string; actionLabel: string; destructive?: boolean }> = {
-  create:  { title: "Create lobby",        description: "This will create a new osu! multiplayer lobby for this match.",                                actionLabel: "Create"      },
-  close:   { title: "Close lobby",         description: "This will close the osu! lobby. This action cannot be undone.",                                actionLabel: "Close lobby", destructive: true },
-  result:  { title: "Post match result",   description: "This will post the final match result to the tournament sheet. Make sure scores are correct.", actionLabel: "Post result" },
+  create:   { title: "Create lobby",        description: "This will create a new osu! multiplayer lobby for this match.",                                actionLabel: "Create"        },
+  close:    { title: "Close lobby",         description: "This will close the osu! lobby. This action cannot be undone.",                                actionLabel: "Close lobby",  destructive: true },
+  result:   { title: "Post match result",   description: "This will post the final match result to the tournament sheet. Make sure scores are correct.", actionLabel: "Post result"   },
+  reminder: { title: "Send match reminder", description: "Posts a reminder ping to the reminder channel with estimated time until match start.",        actionLabel: "Send reminder" },
 }
 
 export function PlayerColumn({
@@ -93,7 +97,8 @@ export function PlayerColumn({
   invA, invB, invLoading,
   round, refName, streamer,
   onInvAChange, onInvBChange,
-  onCreateLobby, onJoinLobby, onCloseLobby, onPostResult,
+  onCreateLobby, onJoinLobby, onCloseLobby, onPostResult, onSendReminder,
+  hasLobby = false, isDemo = false,
 }: Props) {
   const winsNeeded = Math.ceil(bestOf / 2)
   const [editingPlayer, setEditingPlayer] = useState<"a" | "b" | null>(null)
@@ -109,9 +114,10 @@ export function PlayerColumn({
   }
 
   function handleConfirmAction() {
-    if (confirmAction === "create") onCreateLobby?.()
-    if (confirmAction === "close")  onCloseLobby?.()
-    if (confirmAction === "result") onPostResult?.()
+    if (confirmAction === "create")   onCreateLobby?.()
+    if (confirmAction === "close")    onCloseLobby?.()
+    if (confirmAction === "result")   onPostResult?.()
+    if (confirmAction === "reminder") onSendReminder?.()
     setConfirmAction(null)
   }
 
@@ -128,7 +134,7 @@ export function PlayerColumn({
           {invLoading ? <Skeleton className="h-3 w-28" /> : <WinBoxes score={scoreA} needed={winsNeeded} />}
           {invLoading
             ? <Skeleton className="h-14 w-full mt-2" />
-            : <IngredientBar inv={invA} editing={editingPlayer === "a"} onChange={onInvAChange} onToggleEdit={() => setEditingPlayer(editingPlayer === "a" ? null : "a")} />
+            : <IngredientBar inv={invA} editing={editingPlayer === "a"} onChange={isDemo ? undefined : onInvAChange} onToggleEdit={isDemo ? undefined : () => setEditingPlayer(editingPlayer === "a" ? null : "a")} />
           }
         </div>
 
@@ -145,7 +151,7 @@ export function PlayerColumn({
           {invLoading ? <Skeleton className="h-3 w-28" /> : <WinBoxes score={scoreB} needed={winsNeeded} />}
           {invLoading
             ? <Skeleton className="h-14 w-full mt-2" />
-            : <IngredientBar inv={invB} editing={editingPlayer === "b"} onChange={onInvBChange} onToggleEdit={() => setEditingPlayer(editingPlayer === "b" ? null : "b")} />
+            : <IngredientBar inv={invB} editing={editingPlayer === "b"} onChange={isDemo ? undefined : onInvBChange} onToggleEdit={isDemo ? undefined : () => setEditingPlayer(editingPlayer === "b" ? null : "b")} />
           }
         </div>
 
@@ -171,11 +177,15 @@ export function PlayerColumn({
 
       {/* Lobby manage — pinned to bottom */}
       <div className="flex-shrink-0 space-y-1.5 border-t border-border p-4">
-        <p className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">Lobby</p>
-        <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => setConfirmAction("create")}>Create lobby</Button>
-        <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => setJoinOpen(true)}>Join existing lobby</Button>
-        <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => setConfirmAction("result")}>Post match result</Button>
-        <Button size="sm" variant="destructive" className="w-full text-xs" onClick={() => setConfirmAction("close")}>Close lobby</Button>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Lobby</p>
+          {isDemo && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">demo — actions locked</span>}
+        </div>
+        <Button size="sm" variant="outline" className="w-full text-xs" disabled={isDemo || hasLobby} onClick={() => setConfirmAction("create")}>Create lobby</Button>
+        <Button size="sm" variant="outline" className="w-full text-xs" disabled={isDemo || hasLobby} onClick={() => setJoinOpen(true)}>Join existing lobby</Button>
+        <Button size="sm" variant="outline" className="w-full text-xs" disabled={isDemo || hasLobby} onClick={() => setConfirmAction("reminder")}>Match reminder</Button>
+        <Button size="sm" variant="outline" className="w-full text-xs" disabled={isDemo} onClick={() => setConfirmAction("result")}>Post match result</Button>
+        <Button size="sm" variant="destructive" className="w-full text-xs" disabled={isDemo || !hasLobby} onClick={() => setConfirmAction("close")}>Close lobby</Button>
       </div>
 
       {/* Confirmation dialogs */}

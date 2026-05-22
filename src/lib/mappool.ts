@@ -29,6 +29,12 @@ export function rowStyle(map: PoolMap): CSSProperties {
   if (map.status === "banned") {
     return { backgroundColor: "rgba(49,37,37,0.04)", borderLeft: "3px solid rgba(99,72,50,0.2)", opacity: 0.6 }
   }
+  if (map.status === "picked") {
+    return { backgroundColor: `rgba(${r},${g},${b},0.14)`, borderLeft: `3px solid rgba(${r},${g},${b},0.7)` }
+  }
+  if (map.status === "protected") {
+    return { backgroundColor: "rgba(78,106,122,0.12)", borderLeft: "3px solid rgba(78,106,122,0.55)" }
+  }
   if (map.status === "in-progress") {
     return { backgroundColor: `rgba(${r},${g},${b},0.2)`, borderLeft: `3px solid ${hex}` }
   }

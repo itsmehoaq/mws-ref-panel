@@ -1,5 +1,5 @@
 export type Pool = "NM" | "HD" | "HR" | "DT" | "FM" | "TB" | "PS"
-export type MapStatus = "available" | "picked" | "banned" | "in-progress" | "completed"
+export type MapStatus = "available" | "picked" | "banned" | "protected" | "in-progress" | "completed"
 export type MatchStatus = "scheduled" | "upcoming" | "live" | "completed" | "forfeit"
 export type IngKey = "egg" | "sugar" | "butter" | "flour" | "milk"
 export type Inventory = Record<IngKey, number>
@@ -31,6 +31,8 @@ export interface Match {
   mappool?: string
   playerA: string
   playerB: string
+  playerAOsuId?: string
+  playerBOsuId?: string
   date: string
   time: string
   status: MatchStatus
