@@ -31,3 +31,4 @@ plan.md
 *.sln
 *.sw?
 .claude/
+.turbo/
